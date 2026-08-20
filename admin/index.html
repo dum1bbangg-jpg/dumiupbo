@@ -12,6 +12,7 @@
   <script src="../config.js" defer></script>
   <script src="../db.js" defer></script>
   <script src="weflab.js" defer></script>
+  <script src="weflab-history.js" defer></script>
   <script src="admin.js" defer></script>
 </head>
 <body>
@@ -42,6 +43,7 @@ try { if (localStorage.getItem("theme") === "dark") document.body.classList.add(
         <a href="../index.html"><span class="nav-icon nav-book" aria-hidden="true"></span>공개 페이지</a>
         <a class="active" href="#manage"><span class="nav-icon nav-records" aria-hidden="true"></span>업보 관리</a>
         <a href="#weflab"><span class="nav-icon nav-sync" aria-hidden="true"></span>위플랩 연동</a>
+        <a href="#weflab-history"><span class="nav-icon nav-calendar" aria-hidden="true"></span>기간 불러오기</a>
       </nav>
       <div class="dm-side-art" aria-hidden="true"></div>
     </aside>
@@ -188,6 +190,58 @@ try { if (localStorage.getItem("theme") === "dark") document.body.classList.add(
           ④ 룰렛 한 번 돌리거나 <b>시험 메시지</b> ⑤ 칸 지정 ⑥ <b>자동 저장</b> 켜고 <b>설정 저장</b>.<br>
           이 탭을 열어 두는 동안 들어옵니다. 탭을 닫으면 그동안 온 것은 놓치니, 놓친 기간은 아래에서 넣으세요.
         </p>
+      </section>
+
+      <section id="weflab-history" class="admin-panel wh-panel" aria-labelledby="wh-title">
+        <div class="panel-heading">
+          <div><h2 id="wh-title">위플랩 기간 불러오기</h2><p>지난 기록을 기간으로 정해서 위플랩에서 당겨옵니다.</p></div>
+        </div>
+
+        <ol class="wh-steps">
+          <li>위플랩에 로그인한 채로 <b>후원 관리 → 기간 검색</b>을 아무 기간으로 한 번 실행합니다.</li>
+          <li>그 화면에서 <b>F12</b> → <b>네트워크</b> 탭 → 방금 나간 요청 중 결과가 담긴 것을 찾습니다.</li>
+          <li>그 요청에 <b>우클릭 → 복사 → cURL로 복사</b> (Copy as cURL).</li>
+          <li>아래 칸에 붙여 넣고 <b>요청 읽기</b>.</li>
+        </ol>
+
+        <label for="wh-curl">복사한 요청</label>
+        <textarea id="wh-curl" rows="5" spellcheck="false" placeholder="curl 'https://weflab.com/...' -H 'cookie: ...'"></textarea>
+        <p class="wh-warn">
+          이 안에는 위플랩 로그인 정보가 들어 있습니다. 로그인한 관리자만 읽을 수 있는 자리에 저장되고
+          공개 페이지에는 나가지 않습니다. 로그인이 풀리면 다시 복사해서 붙여 넣으세요.
+        </p>
+        <div class="form-actions wh-actions">
+          <button id="wh-parse" class="secondary-button" type="button">요청 읽기</button>
+        </div>
+
+        <div id="wh-parsed" class="wh-parsed" hidden></div>
+        <div id="wh-slots" class="wf-fields wh-slots" hidden></div>
+
+        <div class="wh-range">
+          <label for="wh-from">시작일<input id="wh-from" type="date"></label>
+          <label for="wh-to">종료일<input id="wh-to" type="date"></label>
+          <button id="wh-run" class="primary-button" type="button">불러오기</button>
+        </div>
+        <p id="wh-note" class="wf-note"></p>
+
+        <div id="wh-raw" class="wh-raw"></div>
+
+        <div class="wh-grid">
+          <div>
+            <label for="wh-list-path">기록 목록 위치</label>
+            <select id="wh-list-path"></select>
+            <div id="wh-rows" class="wh-rows"></div>
+          </div>
+          <div>
+            <h3 class="wf-sub">어느 칸이 무엇인지</h3>
+            <div id="wh-fields" class="wf-fields"></div>
+            <div class="form-actions wh-actions">
+              <button id="wh-import" class="primary-button" type="button">업보에 넣기</button>
+              <button id="wh-save" class="secondary-button" type="button">설정 저장</button>
+            </div>
+            <p id="wh-result" class="wh-result" hidden></p>
+          </div>
+        </div>
       </section>
 
       <section class="admin-panel bulk-panel" aria-labelledby="bulk-title">

@@ -141,9 +141,10 @@
     /* Ad blockers sometimes hide admin-prefixed containers; re-assert once. */
     window.setTimeout(function () { elements.shell.hidden = false; }, 1200);
     loadRecords(false);
-    if (window.DoomiWeflab && !weflabStarted) {
+    if (!weflabStarted) {
       weflabStarted = true;
-      window.DoomiWeflab.init();
+      if (window.DoomiWeflab) window.DoomiWeflab.init();
+      if (window.DoomiWeflabHistory) window.DoomiWeflabHistory.init();
     }
   }
 
