@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1180, user-scalable=yes">
+  <meta name="description" content="두미의 업보 기록을 검색하고 확인하는 페이지">
+  <meta property="og:title" content="두미의 업보 수첩">
+  <meta property="og:description" content="두미의 업보 기록을 검색하고 확인하는 페이지">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/doomi-profile.png">
+  <title>두미의 업보 수첩</title>
+  <link rel="icon" href="assets/doomi-profile.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="pcview.js"></script>
+  <script src="vendor/supabase.js" defer></script>
+  <script src="config.js" defer></script>
+  <script src="db.js" defer></script>
+  <script src="public.js" defer></script>
+</head>
+<body>
+<script>
+/* Before first paint: no dark-mode flash, and iframe-safe layout from the start. */
+try { if (localStorage.getItem("theme") === "dark") document.body.classList.add("dark"); } catch (e) {}
+try { if (window.self !== window.top) document.body.classList.add("embed"); }
+catch (e) { document.body.classList.add("embed"); }
+</script>
+  <div class="site-shell">
+    <aside class="sidebar public-sidebar" aria-label="주요 메뉴">
+      <a class="profile" href="#top" aria-label="두미 업보 수첩 홈">
+        <span class="profile-ring"><img id="site-avatar" src="assets/doomi-profile.png" alt="두미 프로필" width="116" height="116"></span>
+        <strong>두미_</strong>
+      </a>
+      <nav id="view-nav" class="nav-list" aria-label="페이지 바로가기">
+        <a class="active" data-view="records" href="#records"><span class="nav-icon nav-records" aria-hidden="true"></span>업보 기록</a>
+        <a data-view="stats" href="#stats"><span class="nav-icon nav-chart" aria-hidden="true"></span>통계</a>
+        <a data-view="book" href="#book"><span class="nav-icon nav-book" aria-hidden="true"></span>업보 도감</a>
+        <a data-view="calendar" href="#calendar"><span class="nav-icon nav-calendar" aria-hidden="true"></span>업보 캘린더</a>
+      </nav>
+      <div class="trust-note" aria-label="서비스 안내">
+        <span class="paw" aria-hidden="true"></span>
+        <p>약속을 지킬 때마다<br>두콩이와 두미의 <b>신뢰 UP!</b></p>
+      </div>
+      <div class="side-tools">
+        <a class="open-full" href="?pc=1" target="_blank" rel="noreferrer">PC 화면 ↗</a>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="다크모드 켜기">
+          <span class="theme-knob" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div id="sync-badge" class="sync-badge local" title="데이터 연결 상태">
+        <span class="nav-icon nav-sync" aria-hidden="true"></span><b id="sync-badge-text">업보 수첩</b>
+      </div>
+    </aside>
+
+    <main id="top" class="main-content">
+      <header class="hero">
+        <img src="assets/doomi-banner.jpg" alt="해변에서 뛰노는 두미 캐릭터 배너" width="1600" height="233">
+        <div class="hero-title">
+          <h1>두미의 <em>업보</em> 수첩</h1>
+          <p>두콩이들의 약속, 하나씩 착실하게!</p>
+        </div>
+      </header>
+
+      <section class="content-card">
+        <div id="toolbar" class="toolbar" role="search">
+          <label class="search-field">
+            <span class="search-icon" aria-hidden="true"></span>
+            <span class="sr-only">업보 검색</span>
+            <input id="search-input" type="search" placeholder="아이디 또는 닉네임 검색" autocomplete="off">
+            <button id="clear-search" class="clear-button" type="button" aria-label="검색어 지우기" hidden></button>
+          </label>
+          <label class="sr-only" for="status-filter">상태 선택</label>
+          <select id="status-filter">
+            <option value="all">전체 상태</option>
+            <option value="active">진행 중</option>
+            <option value="done">완료</option>
+          </select>
+          <label class="sr-only" for="category-filter">분류 선택</label>
+          <select id="category-filter">
+            <option value="all">전체 분류</option>
+          </select>
+          <label class="sr-only" for="sort-filter">정렬 순서</label>
+          <select id="sort-filter">
+            <option value="latest">최신순</option>
+            <option value="oldest">오래된순</option>
+          </select>
+        </div>
+
+        <div id="stats" class="stats-grid" aria-label="업보 통계">
+          <article class="stat-card coral"><span class="stat-icon stat-total" aria-hidden="true"></span><span><small>전체 업보</small><strong id="stat-total">-</strong></span></article>
+          <article class="stat-card orange"><span class="stat-icon stat-active" aria-hidden="true"></span><span><small>진행 중</small><strong id="stat-active">-</strong></span></article>
+          <article class="stat-card mint"><span class="stat-icon stat-done" aria-hidden="true"></span><span><small>완료</small><strong id="stat-done">-</strong></span></article>
+          <article class="stat-card blue"><span class="stat-icon stat-today" aria-hidden="true"></span><span><small>오늘 추가</small><strong id="stat-today">-</strong></span></article>
+        </div>
+
+        <section id="view-records" class="view" aria-labelledby="records-heading">
+          <div class="records-heading-row">
+            <div>
+              <h2 id="records-heading">업보 기록</h2>
+              <p id="result-count" aria-live="polite">기록을 불러오는 중이에요</p>
+            </div>
+            <span id="last-sync" class="last-sync">마지막 확인 · 불러오는 중</span>
+          </div>
+
+          <div id="date-chip" class="date-chip" hidden>
+            <b id="date-chip-label"></b>
+            <button id="date-chip-clear" type="button" aria-label="날짜 조건 지우기"></button>
+          </div>
+
+          <div id="records-content" aria-busy="true">
+            <div id="records" class="table-wrap public-table">
+              <table>
+                <thead><tr><th scope="col">닉네임</th><th scope="col">SOOP ID</th><th scope="col">업보 기록</th><th scope="col">분류</th><th scope="col">상태</th><th scope="col">등록일</th></tr></thead>
+                <tbody id="record-table-body"></tbody>
+              </table>
+            </div>
+            <div id="mobile-records" class="mobile-records"></div>
+            <button id="more-button" class="more-button" type="button" hidden>업보 더 보기</button>
+            <div id="empty-state" class="empty-state" hidden>
+              <span class="empty-icon nav-icon nav-book" aria-hidden="true"></span>
+              <h3 id="empty-title">찾는 업보가 없어요</h3>
+              <p id="empty-text">검색어나 상태 필터를 바꿔보세요.</p>
+              <button id="reset-filters" type="button">필터 초기화</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-stats" class="view" aria-labelledby="stats-heading" hidden>
+          <div class="records-heading-row">
+            <div>
+              <h2 id="stats-heading">통계</h2>
+              <p>두콩이들의 업보를 한눈에 정리했어요</p>
+            </div>
+          </div>
+          <div class="stats-panels">
+            <article class="panel-box">
+              <h3>진행 상황</h3>
+              <div id="progress-bar" class="progress-bar" role="img" aria-label="진행 중과 완료 비율">
+                <span class="progress-seg active" id="progress-active"></span>
+                <span class="progress-seg done" id="progress-done"></span>
+              </div>
+              <ul class="legend">
+                <li><i class="dot active" aria-hidden="true"></i>진행 중 <b id="legend-active">0</b></li>
+                <li><i class="dot done" aria-hidden="true"></i>완료 <b id="legend-done">0</b></li>
+              </ul>
+              <p class="panel-note" id="done-rate">완료율 0%</p>
+            </article>
+
+            <article class="panel-box">
+              <h3>최근 14일 추가</h3>
+              <div id="trend-chart" class="trend-chart" role="img" aria-label="최근 14일 업보 추가 추이"></div>
+              <p class="panel-note" id="trend-note">아직 기록이 없어요</p>
+            </article>
+
+            <article class="panel-box">
+              <h3>업보왕 TOP 5</h3>
+              <ol id="top-viewers" class="rank-list"></ol>
+            </article>
+
+            <article class="panel-box">
+              <h3>많이 걸린 업보 TOP 5</h3>
+              <ol id="top-debts" class="rank-list"></ol>
+            </article>
+          </div>
+        </section>
+
+        <section id="view-book" class="view" aria-labelledby="book-heading" hidden>
+          <div class="records-heading-row">
+            <div>
+              <h2 id="book-heading">업보 도감</h2>
+              <p id="book-count">두콩이별로 모아 봤어요</p>
+            </div>
+            <label class="sr-only" for="book-sort">도감 정렬</label>
+            <select id="book-sort">
+              <option value="total">업보 많은 순</option>
+              <option value="active">진행 중 많은 순</option>
+              <option value="done">완료 많은 순</option>
+              <option value="name">닉네임 순</option>
+            </select>
+          </div>
+          <div id="book-grid" class="book-grid"></div>
+          <div id="book-empty" class="empty-state" hidden>
+            <span class="empty-icon nav-icon nav-book" aria-hidden="true"></span>
+            <h3>도감에 모인 두콩이가 없어요</h3>
+            <p>업보가 쌓이면 두콩이별로 여기에 모여요.</p>
+          </div>
+        </section>
+
+        <section id="view-calendar" class="view" aria-labelledby="calendar-heading" hidden>
+          <div class="records-heading-row">
+            <div>
+              <h2 id="calendar-heading">업보 캘린더</h2>
+              <p>날짜를 누르면 그날 기록만 볼 수 있어요</p>
+            </div>
+            <div class="month-nav">
+              <button id="prev-month" type="button" aria-label="이전 달">‹</button>
+              <b id="month-label">-</b>
+              <button id="next-month" type="button" aria-label="다음 달">›</button>
+            </div>
+          </div>
+          <div class="calendar">
+            <div class="calendar-head" aria-hidden="true">
+              <span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span class="sat">토</span><span class="sun">일</span>
+            </div>
+            <div id="calendar-grid" class="calendar-grid"></div>
+          </div>
+          <p class="panel-note" id="month-summary">이번 달 업보 0건</p>
+        </section>
+
+        <p id="data-note" class="demo-note" aria-live="polite" hidden></p>
+      </section>
+
+      <footer class="site-footer">© 2026 DOOMI OFFICIAL</footer>
+    </main>
+  </div>
+
+  <div id="drawer-backdrop" class="drawer-backdrop" hidden>
+    <aside id="detail-drawer" class="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="detail-title" aria-describedby="detail-description">
+      <button id="drawer-close" class="drawer-close" type="button" aria-label="상세 내용 닫기"></button>
+      <span id="detail-status" class="status active">진행 중</span>
+      <h2 id="detail-title"></h2>
+      <p id="detail-id" class="drawer-id"></p>
+      <div class="drawer-debt"><small>업보 기록</small><strong id="detail-description"></strong></div>
+      <dl>
+        <div><dt>분류</dt><dd id="detail-category"></dd></div>
+        <div><dt>등록일</dt><dd id="detail-created"></dd></div>
+        <div><dt>등록 경로</dt><dd id="detail-source"></dd></div>
+        <div id="detail-completed-row" hidden><dt>완료일</dt><dd id="detail-completed"></dd></div>
+      </dl>
+    </aside>
+  </div>
+
+  <div id="viewer-backdrop" class="drawer-backdrop" hidden>
+    <aside id="viewer-modal" class="viewer-modal" role="dialog" aria-modal="true" aria-labelledby="viewer-name">
+      <button id="viewer-close" class="drawer-close" type="button" aria-label="도감 상세 닫기"></button>
+      <div class="viewer-head">
+        <span id="viewer-avatar" class="viewer-avatar" aria-hidden="true"></span>
+        <div>
+          <h2 id="viewer-name"></h2>
+          <p id="viewer-id" class="drawer-id"></p>
+        </div>
+      </div>
+      <div class="viewer-counts">
+        <span class="viewer-count total"><small>전체</small><b id="viewer-total">0</b></span>
+        <span class="viewer-count active"><small>진행 중</small><b id="viewer-active">0</b></span>
+        <span class="viewer-count done"><small>완료</small><b id="viewer-done">0</b></span>
+      </div>
+      <h3 class="viewer-subhead">업보 종류</h3>
+      <ul id="viewer-kinds" class="viewer-kinds"></ul>
+      <button id="viewer-see-records" class="more-button" type="button">이 두콩이 기록 보기</button>
+    </aside>
+  </div>
+</body>
+</html>

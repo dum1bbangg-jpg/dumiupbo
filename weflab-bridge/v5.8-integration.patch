@@ -1,0 +1,99 @@
+diff --git a/desktop/build.bat b/desktop/build.bat
+--- a/desktop/build.bat
++++ b/desktop/build.bat
+@@ -81,5 +81,6 @@
+   /resource:"%ROOT%\pollscript.js",pollscript.js ^
+   "%~dp0AssemblyInfo.cs" ^
+   "%~dp0CrashLog.cs" ^
++  "%~dp0WeflabSiteBridge.cs" ^
+   "%~dp0KarmaTracker.cs" ^
+   "%~dp0ExcelReport.cs" ^
+diff --git a/desktop/KarmaTracker.cs b/desktop/KarmaTracker.cs
+--- a/desktop/KarmaTracker.cs
++++ b/desktop/KarmaTracker.cs
+@@ -1202,7 +1202,8 @@ class MainForm : Form
+ {
+     Microsoft.Web.WebView2.WinForms.WebView2 _web;
+     NotifyIcon _tray;
+     bool _reallyQuit;
++    WeflabSiteBridge _doomiBridge;
+ 
+     public MainForm()
+     {
+@@ -1216,8 +1217,16 @@ class MainForm : Form
+         _web = new Microsoft.Web.WebView2.WinForms.WebView2 { Dock = DockStyle.Fill };
+         Controls.Add(_web);
+ 
+         SetupTray();
++        _doomiBridge = WeflabSiteBridge.StartDefault(delegate (string note)
++        {
++            Program.PollStage("두미 브리지: " + note);
++        });
+         Load += MainForm_Load;
+         FormClosing += MainForm_FormClosing;
++        FormClosed += delegate
++        {
++            if (_doomiBridge != null) _doomiBridge.Dispose();
++        };
+     }
+ 
+@@ -1271,8 +1280,10 @@ class MainForm : Form
+     {
+         string msg;
+         try { msg = e.TryGetWebMessageAsString(); }
+         catch { return; }
+ 
++        if (_doomiBridge != null && _doomiBridge.TryHandleWebMessage(msg)) return;
++
+         if (msg == "weflab-login") { OpenLogin(); return; }
+ 
+         /* 지난 기록 가져오기 — 화면이 만든 스크립트를 수집기 창에서 대신 돌려 줍니다.
+diff --git a/app.js b/app.js
+--- a/app.js
++++ b/app.js
+@@ -1470,7 +1470,18 @@
+    로그인이 끝나면 프로그램이 계정 번호만 알려줍니다.
+    ══════════════════════════════════════════════════════ */
+ const IN_APP = Boolean(window.chrome && window.chrome.webview);
+ 
++function pushDoomiBridge(rows) {
++  if (!IN_APP || !Array.isArray(rows) || !rows.length) return;
++  try {
++    window.chrome.webview.postMessage(
++      `doomi-bridge-import:${JSON.stringify(rows)}`
++    );
++  } catch (err) {
++    diag(`두미 브리지 전달 실패: ${err.message}`);
++  }
++}
++
+ if (IN_APP) {
+   $('#loginPanel').hidden = false;
+ 
+@@ -1558,7 +1569,8 @@
+         const rows = Weflab.toKarmaRows(rec);
+         if (!rows.length) continue;
+         try {
+           const { inserted } = await Store.addMany(rows);
++          pushDoomiBridge(rows);
+           if (inserted) {
+             added += inserted;
+             if (!pollFirst) pushFeed(rows, rec);
+@@ -1850,7 +1862,8 @@
+     onKarma: async (rows, data) => {
+       diag(`룰렛 ${rows.length}건: ${rows.map((r) => r.item).join(', ')}`);
+       try {
+         const { inserted } = await Store.addMany(rows);
++        pushDoomiBridge(rows);
+         if (inserted) {
+           pushFeed(rows, data);
+           await reload();
+@@ -2164,7 +2177,8 @@
+   }
+ 
+   try {
+     const { inserted, skipped } = await Store.addMany(rows);
++    pushDoomiBridge(rows);
+     note.className = 'note ok';
+     note.textContent = `${inserted}개 추가${skipped ? `, ${skipped}개는 이미 있어서 건너뜀` : ''}.`;
+     $('#importText').value = '';

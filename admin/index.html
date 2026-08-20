@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="description" content="두미 업보 기록 관리자 페이지">
+  <title>두미 업보 관리자</title>
+  <link rel="icon" href="../assets/doomi-profile.png">
+  <link rel="stylesheet" href="../styles.css">
+  <script src="../vendor/supabase.js" defer></script>
+  <script src="../config.js" defer></script>
+  <script src="../db.js" defer></script>
+  <script src="admin.js" defer></script>
+</head>
+<body>
+<script>
+try { if (localStorage.getItem("theme") === "dark") document.body.classList.add("dark"); } catch (e) {}
+</script>
+  <div id="dmGate" class="dm-gate">
+    <form id="dmGateForm" class="dm-gate-card">
+      <span class="profile-ring"><img class="site-avatar" src="../assets/doomi-profile.png" alt="두미 프로필" width="100" height="100"></span>
+      <h1>두미 업보 관리자</h1>
+      <p class="dm-gate-lead">등록된 관리자 계정으로 로그인하세요.</p>
+      <label for="dm-email">이메일</label>
+      <input id="dm-email" type="email" autocomplete="username" required>
+      <label for="dm-password">비밀번호</label>
+      <input id="dm-password" type="password" autocomplete="current-password" required>
+      <button id="dm-login" class="primary-button" type="submit">로그인</button>
+      <p id="dm-gate-message" class="dm-gate-message" role="status" aria-live="polite"></p>
+    </form>
+  </div>
+
+  <div id="dmShell" class="admin-shell" hidden>
+    <aside class="admin-sidebar" aria-label="관리자 메뉴">
+      <a class="admin-profile" href="../index.html">
+        <span class="profile-ring"><img class="site-avatar" src="../assets/doomi-profile.png" alt="두미 프로필" width="100" height="100"></span>
+        <strong>관리자</strong><small>ADMIN</small>
+      </a>
+      <nav class="admin-nav" aria-label="관리자 바로가기">
+        <a href="../index.html"><span class="nav-icon nav-book" aria-hidden="true"></span>공개 페이지</a>
+        <a class="active" href="#manage"><span class="nav-icon nav-records" aria-hidden="true"></span>업보 관리</a>
+        <a href="#integration"><span class="nav-icon nav-sync" aria-hidden="true"></span>연동 안내</a>
+      </nav>
+      <div class="dm-side-art" aria-hidden="true"></div>
+    </aside>
+
+    <main class="admin-main">
+      <header class="admin-topbar">
+        <div><a class="mobile-home" href="../index.html">공개 페이지로</a><h1>두미 업보 관리자</h1></div>
+        <div class="admin-actions">
+          <span id="dm-account" class="bridge-indicator"></span>
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="어두운 화면으로">
+            <span class="theme-knob" aria-hidden="true"></span>
+          </button>
+          <button id="dm-logout" class="reset-button" type="button">로그아웃</button>
+        </div>
+      </header>
+
+      <section class="admin-status-grid" aria-label="데이터 상태">
+        <article class="admin-status-card coral"><span class="admin-card-icon nav-icon nav-records" aria-hidden="true"></span><p>전체 업보<strong id="admin-total">-</strong></p></article>
+        <article class="admin-status-card orange"><span class="admin-card-icon stat-icon stat-active" aria-hidden="true"></span><p>진행 중<strong id="admin-active">-</strong></p></article>
+        <article class="admin-status-card mint"><span class="admin-card-icon stat-icon stat-done" aria-hidden="true"></span><p>완료<strong id="admin-done">-</strong></p></article>
+        <article class="admin-status-card blue"><span class="admin-card-icon nav-icon nav-sync" aria-hidden="true"></span><p>마지막 확인<strong id="admin-last-sync">아직 없음</strong></p></article>
+      </section>
+
+      <p id="admin-notice" class="admin-notice success" role="status" aria-live="polite">데이터를 불러오고 있어요.</p>
+
+      <div id="manage" class="admin-workspace">
+        <section id="integration" class="admin-panel integration-panel">
+          <div class="panel-heading">
+            <div><h2>룰렛 자동 연동</h2><p>룰렛업보정리기가 보낸 기록은 여기 등록 없이 바로 목록에 들어와요.</p></div>
+            <span class="module-chip">자동</span>
+          </div>
+          <div class="integration-steps">
+            <article><span aria-hidden="true">1</span><div><b>수집기가 기록 전송</b><p>룰렛업보정리기가 사이트의 /api/weplab/import 주소로 정규화된 기록을 보냅니다.</p></div></article>
+            <article><span aria-hidden="true">2</span><div><b>중복 확인 후 저장</b><p>event_uid와 stage가 같은 기록은 다시 저장하지 않습니다. 이미 완료로 바꾼 기록도 되돌아가지 않습니다.</p></div></article>
+            <article><span aria-hidden="true">3</span><div><b>공개 페이지 자동 갱신</b><p>공개 페이지가 30초마다 새 기록을 확인해 목록과 통계를 갱신합니다.</p></div></article>
+          </div>
+          <button id="refresh-button" class="secondary-button" type="button">데이터 다시 확인</button>
+        </section>
+
+        <section class="admin-panel form-panel">
+          <div class="panel-heading"><div><h2 id="form-title">새 업보 등록</h2><p>직접 기록을 추가합니다.</p></div></div>
+          <form id="record-form">
+            <input id="edit-id" type="hidden" value="">
+            <label for="soop-id">SOOP ID</label><input id="soop-id" name="soopId" maxlength="80" placeholder="아이디 입력" autocomplete="off" required>
+            <label for="nickname">닉네임</label><input id="nickname" name="nickname" maxlength="80" placeholder="닉네임 입력" autocomplete="off" required>
+            <label for="description">업보 내용</label><textarea id="description" name="description" maxlength="1000" placeholder="내용 입력. 최대 1000자" rows="4" required></textarea>
+            <label for="record-category">분류</label><select id="record-category" name="category"></select>
+            <label for="record-status">상태</label><select id="record-status" name="status"><option value="active">진행 중</option><option value="done">완료</option></select>
+            <div class="form-actions">
+              <button id="save-button" class="primary-button" type="submit">저장하기</button>
+              <button id="cancel-edit" class="reset-button" type="button" hidden>수정 취소</button>
+              <button id="reset-button" class="reset-button" type="reset">초기화</button>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <section class="admin-panel quick-records" aria-labelledby="quick-records-title">
+        <div class="panel-heading">
+          <div><h2 id="quick-records-title">업보 목록</h2><p id="quick-count">불러오는 중</p></div>
+          <a href="../index.html">공개 페이지 보기</a>
+        </div>
+        <div class="admin-search">
+          <label class="sr-only" for="admin-search-input">기록 검색</label>
+          <input id="admin-search-input" type="search" placeholder="닉네임 · 아이디 · 내용 검색" autocomplete="off">
+          <label class="sr-only" for="admin-status-filter">상태 선택</label>
+          <select id="admin-status-filter">
+            <option value="all">전체 상태</option>
+            <option value="active">진행 중</option>
+            <option value="done">완료</option>
+          </select>
+          <label class="sr-only" for="admin-category-filter">분류 선택</label>
+          <select id="admin-category-filter">
+            <option value="all">전체 분류</option>
+          </select>
+        </div>
+        <div id="quick-record-list" class="quick-record-list" aria-live="polite"></div>
+        <button id="admin-more" class="more-button" type="button" hidden>더 보기</button>
+      </section>
+
+      <section class="admin-panel bulk-panel" aria-labelledby="bulk-title">
+        <div class="panel-heading">
+          <div><h2 id="bulk-title">한 번에 등록 · 내보내기</h2><p>여러 건을 붙여넣어 등록하거나, 지금 목록을 파일로 내려받습니다.</p></div>
+          <button id="export-csv" class="secondary-button" type="button">CSV로 내보내기</button>
+        </div>
+        <label for="bulk-input">붙여넣기</label>
+        <textarea id="bulk-input" rows="6" spellcheck="false" placeholder="아이디,닉네임,업보 내용,분류,상태"></textarea>
+        <p class="bulk-help">
+          한 줄에 한 건. 쉼표 또는 탭으로 구분합니다. 엑셀에서 복사해 붙여넣어도 됩니다.<br>
+          <b>아이디,닉네임,업보 내용</b> 까지가 필수. 분류와 상태를 생략하면 룰렛 벌칙 · 진행 중으로 들어갑니다.<br>
+          분류는 룰렛 벌칙 / 약속 / 이벤트, 상태는 진행 중 / 완료.<br>
+          내용에 쉼표가 있으면 그 칸을 큰따옴표로 감쌉니다.
+        </p>
+        <div class="form-actions bulk-actions">
+          <button id="bulk-check" class="secondary-button" type="button">미리 검사</button>
+          <button id="bulk-save" class="primary-button" type="button">전부 등록</button>
+        </div>
+        <div id="bulk-result" class="bulk-result" hidden></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
