@@ -109,6 +109,7 @@
       category: safeCategory(input.category),
       source: "manual"
     };
+    if (input.createdAt) payload.created_at = input.createdAt;
     var result = await client.from("debts").insert(payload).select().single();
     if (result.error) throw friendlyError(result.error, "업보를 저장하지 못했어요.");
     return fromRow(result.data);
@@ -116,8 +117,9 @@
 
   async function createRecords(inputs) {
     if (!configured) throw notConfigured();
+    var now = new Date().toISOString();
     var payload = inputs.map(function (input) {
-      return {
+      var row = {
         nickname: requiredText(input.nickname, "닉네임", 80),
         soop_id: requiredText(input.soopId, "SOOP ID", 80),
         description: requiredText(input.description, "업보 내용", 1000),
@@ -125,6 +127,12 @@
         category: safeCategory(input.category),
         source: "manual"
       };
+      /* Backfilled rows keep their original date; without this every imported
+         record would land on today and the calendar and stats would be wrong.
+         Every row must carry the same keys: in a bulk insert a key missing from
+         one object arrives as null and trips the not-null constraint. */
+      row.created_at = input.createdAt || now;
+      return row;
     });
     var result = await client.from("debts").insert(payload).select();
     if (result.error) throw friendlyError(result.error, "업보를 저장하지 못했어요.");
@@ -210,6 +218,44 @@
     return "https://profile.img.sooplive.co.kr/LOGO/" + id.slice(0, 2) + "/" + id + "/" + id + ".jpg";
   }
 
+  /* Accepts 2026-08-18, 2026.08.18, 2026/08/18, optionally with HH:MM.
+     Bare dates are read as Seoul time so a backfilled day lands on that day. */
+  function parseInputDate(text) {
+    var raw = String(text == null ? "" : text).trim();
+    if (!raw) return null;
+    var match = raw.match(/^(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?$/);
+    if (!match) return null;
+    var year = Number(match[1]);
+    var month = Number(match[2]);
+    var day = Number(match[3]);
+    var hour = match[4] === undefined ? 12 : Number(match[4]);
+    var minute = match[5] === undefined ? 0 : Number(match[5]);
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+
+    var iso = year + "-" + pad(month) + "-" + pad(day) + "T" + pad(hour) + ":" + pad(minute) + ":00+09:00";
+    var date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return null;
+    /* Reject rolled-over dates such as 2026-02-31. */
+    if (dateKey(date) !== year + "-" + pad(month) + "-" + pad(day)) return null;
+    return date.toISOString();
+  }
+
+  function pad(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  /* YYYY-MM-DD HH:MM in Seoul time, for CSV that can be pasted back in. */
+  function formatStamp(value) {
+    if (!value) return "";
+    var date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    var parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", hour12: false
+    }).formatToParts(date).reduce(function (acc, part) { acc[part.type] = part.value; return acc; }, {});
+    return parts.year + "-" + parts.month + "-" + parts.day + " " + parts.hour + ":" + parts.minute;
+  }
+
   function dateKey(value) {
     var date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return "";
@@ -283,6 +329,8 @@
     categoryLabel: categoryLabel,
     safeCategory: safeCategory,
     dateKey: dateKey,
+    parseInputDate: parseInputDate,
+    formatStamp: formatStamp,
     soopAvatarUrl: soopAvatarUrl,
     soopId: String(config.SOOP_ID || "").trim(),
     formatShortDate: formatShortDate,

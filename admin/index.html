@@ -69,15 +69,30 @@ try { if (localStorage.getItem("theme") === "dark") document.body.classList.add(
       <div id="manage" class="admin-workspace">
         <section id="integration" class="admin-panel integration-panel">
           <div class="panel-heading">
-            <div><h2>룰렛 자동 연동</h2><p>룰렛업보정리기가 보낸 기록은 여기 등록 없이 바로 목록에 들어와요.</p></div>
-            <span class="module-chip">자동</span>
+            <div><h2>룰렛 자동 연동</h2><p>룰렛업보정리기가 보낸 기록은 등록 없이 바로 목록에 들어옵니다.</p></div>
+            <span id="bridge-chip" class="module-chip">확인 중</span>
           </div>
+
+          <div class="bridge-status">
+            <p>마지막으로 룰렛에서 들어온 기록<strong id="bridge-last">확인 중</strong></p>
+            <p id="bridge-hint" class="panel-note"></p>
+          </div>
+
+          <p class="integration-note">
+            이 화면에서 위플랩을 직접 불러올 수는 없습니다. 위플랩 로그인이 룰렛업보정리기
+            안에만 있어서, 사이트 혼자서는 접속할 방법이 없습니다.
+            <b>기록을 넣는 길은 두 가지입니다.</b>
+          </p>
+
           <div class="integration-steps">
-            <article><span aria-hidden="true">1</span><div><b>수집기가 기록 전송</b><p>룰렛업보정리기가 사이트의 /api/weplab/import 주소로 정규화된 기록을 보냅니다.</p></div></article>
-            <article><span aria-hidden="true">2</span><div><b>중복 확인 후 저장</b><p>event_uid와 stage가 같은 기록은 다시 저장하지 않습니다. 이미 완료로 바꾼 기록도 되돌아가지 않습니다.</p></div></article>
-            <article><span aria-hidden="true">3</span><div><b>공개 페이지 자동 갱신</b><p>공개 페이지가 30초마다 새 기록을 확인해 목록과 통계를 갱신합니다.</p></div></article>
+            <article><span aria-hidden="true">1</span><div><b>앞으로 들어올 기록 — 자동</b><p>룰렛업보정리기에 연동을 붙여두면 룰렛이 돌아갈 때마다 저절로 올라옵니다. 프로그램이 켜져 있어야 합니다. 설정은 묶음의 weflab-bridge 폴더에 있습니다.</p></div></article>
+            <article><span aria-hidden="true">2</span><div><b>예전 기록 — 아래 "한 번에 등록"</b><p>룰렛업보정리기에서 엑셀로 내보낸 뒤 아래 칸에 붙여넣으세요. <b>날짜 칸을 같이 넣으면 그날 기록으로 저장됩니다.</b></p></div></article>
           </div>
-          <button id="refresh-button" class="secondary-button" type="button">데이터 다시 확인</button>
+
+          <div class="form-actions bridge-actions">
+            <button id="refresh-button" class="secondary-button" type="button">데이터 다시 확인</button>
+            <a class="secondary-button" href="#bulk-title">예전 기록 넣으러 가기</a>
+          </div>
         </section>
 
         <section class="admin-panel form-panel">
@@ -127,12 +142,19 @@ try { if (localStorage.getItem("theme") === "dark") document.body.classList.add(
           <button id="export-csv" class="secondary-button" type="button">CSV로 내보내기</button>
         </div>
         <label for="bulk-input">붙여넣기</label>
-        <textarea id="bulk-input" rows="6" spellcheck="false" placeholder="아이디,닉네임,업보 내용,분류,상태"></textarea>
+        <textarea id="bulk-input" rows="7" spellcheck="false" placeholder="아이디,닉네임,업보 내용,분류,상태,날짜"></textarea>
         <p class="bulk-help">
           한 줄에 한 건. 쉼표 또는 탭으로 구분합니다. 엑셀에서 복사해 붙여넣어도 됩니다.<br>
-          <b>아이디,닉네임,업보 내용</b> 까지가 필수. 분류와 상태를 생략하면 룰렛 벌칙 · 진행 중으로 들어갑니다.<br>
-          분류는 룰렛 벌칙 / 약속 / 이벤트, 상태는 진행 중 / 완료.<br>
+          <b>아이디,닉네임,업보 내용</b> 까지가 필수. 뒤의 셋은 생략할 수 있습니다.<br>
+          분류는 룰렛 벌칙 / 약속 / 이벤트 (생략하면 룰렛 벌칙), 상태는 진행 중 / 완료 (생략하면 진행 중).<br>
+          <b>날짜는 2026-08-18 또는 2026-08-18 21:30 형식.</b>
+          예전 기록을 넣을 때 이걸 적어야 그날 기록으로 들어갑니다. 비우면 오늘 날짜가 됩니다.<br>
           내용에 쉼표가 있으면 그 칸을 큰따옴표로 감쌉니다.
+        </p>
+        <p class="bulk-example">
+          예시<br>
+          <code>starkong,별빛두콩,"룰렛 벌칙: 애교송 1회",룰렛 벌칙,완료,2026-07-14</code><br>
+          <code>dumkong,두콩이,공포게임 30분,,,2026-07-15 22:10</code>
         </p>
         <div class="form-actions bulk-actions">
           <button id="bulk-check" class="secondary-button" type="button">미리 검사</button>

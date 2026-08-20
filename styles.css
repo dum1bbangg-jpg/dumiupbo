@@ -613,3 +613,18 @@ body.dark .empty-state .nav-icon {
   background-color: rgba(255, 255, 255, .88);
   border-radius: 8px;
 }
+
+/* Roulette bridge health */
+.bridge-status { margin-bottom: 16px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-soft); }
+.bridge-status p { margin: 0; color: var(--muted); font-size: 12px; font-weight: 800; }
+.bridge-status strong { display: block; margin-top: 6px; color: var(--ink); font-size: 20px; }
+.bridge-status .panel-note { margin-top: 10px; font-weight: 600; line-height: 1.7; }
+.integration-note { margin: 0 0 16px; color: var(--body-ink); font-size: 13px; line-height: 1.8; }
+.bridge-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; max-width: 420px; }
+.bridge-actions a { display: inline-flex; align-items: center; justify-content: center; text-align: center; }
+.module-chip.ok { color: #1d6f60; background: #edf9f5; }
+.module-chip.warn { color: #b7601f; background: #fff5ea; }
+body.dark .module-chip.ok { color: #7fd9c1; background: #16272a; }
+body.dark .module-chip.warn { color: #ffbe7e; background: #2c2318; }
+.bulk-example { margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); color: var(--muted); font-size: 12px; line-height: 2; }
+.bulk-example code { color: var(--body-ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }

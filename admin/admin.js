@@ -51,6 +51,9 @@
     elements.bulkCheck = document.getElementById("bulk-check");
     elements.bulkSave = document.getElementById("bulk-save");
     elements.bulkResult = document.getElementById("bulk-result");
+    elements.bridgeChip = document.getElementById("bridge-chip");
+    elements.bridgeLast = document.getElementById("bridge-last");
+    elements.bridgeHint = document.getElementById("bridge-hint");
 
     elements.gateForm.addEventListener("submit", handleLogin);
     elements.logout.addEventListener("click", handleLogout);
@@ -280,7 +283,41 @@
     setText("admin-active", stats.active.toLocaleString("ko-KR"));
     setText("admin-done", stats.done.toLocaleString("ko-KR"));
     setText("admin-last-sync", shortTime(state.lastSync));
+    renderBridgeStatus();
     renderList();
+  }
+
+  /* Nothing here can pull from WefLab, so the useful thing to show is whether
+     the desktop collector has been reaching us at all. */
+  function renderBridgeStatus() {
+    var roulette = state.records.filter(function (record) { return record.source === "weplab"; });
+    if (!roulette.length) {
+      elements.bridgeChip.textContent = "연동 전";
+      elements.bridgeChip.className = "module-chip warn";
+      elements.bridgeLast.textContent = "아직 없음";
+      elements.bridgeHint.textContent =
+        "룰렛에서 들어온 기록이 하나도 없습니다. 연동을 아직 안 붙였거나, 붙였는데 전송이 막힌 상태입니다.";
+      return;
+    }
+
+    var newest = roulette.reduce(function (best, record) {
+      return new Date(record.createdAt) > new Date(best.createdAt) ? record : best;
+    });
+    var days = Math.floor((Date.now() - new Date(newest.createdAt).getTime()) / 86400000);
+    elements.bridgeLast.textContent = window.DoomiData.formatStamp(newest.createdAt);
+
+    if (days >= 3) {
+      elements.bridgeChip.textContent = days + "일째 조용";
+      elements.bridgeChip.className = "module-chip warn";
+      elements.bridgeHint.textContent =
+        days + "일 동안 룰렛 기록이 안 들어왔습니다. 그동안 방송이 없었으면 정상이고, "
+        + "아니면 룰렛업보정리기가 꺼져 있었을 수 있습니다. 빠진 기간은 아래에서 넣으면 됩니다.";
+    } else {
+      elements.bridgeChip.textContent = "연동 중";
+      elements.bridgeChip.className = "module-chip ok";
+      elements.bridgeHint.textContent =
+        "룰렛 기록 " + roulette.length.toLocaleString("ko-KR") + "건이 연동으로 들어와 있습니다.";
+    }
   }
 
   function filteredRecords() {
@@ -449,8 +486,8 @@
         record.description,
         window.DoomiData.categoryLabel(record.category),
         record.status === "done" ? "완료" : "진행 중",
-        window.DoomiData.formatDateTime(record.createdAt),
-        record.completedAt ? window.DoomiData.formatDateTime(record.completedAt) : "",
+        window.DoomiData.formatStamp(record.createdAt),
+        window.DoomiData.formatStamp(record.completedAt),
         record.source === "weplab" ? "룰렛 연동" : "직접 등록"
       ].map(csvCell).join(","));
     });
@@ -538,6 +575,15 @@
         return;
       }
 
+      var createdAt = null;
+      if (String(cells[5] || "").trim()) {
+        createdAt = window.DoomiData.parseInputDate(cells[5]);
+        if (!createdAt) {
+          errors.push(lineNo + "번째 줄: 날짜 \"" + cells[5].trim() + "\" 를 못 읽었어요. 2026-08-18 형식으로.");
+          return;
+        }
+      }
+
       var statusText = String(cells[4] || "").trim();
       var status = "active";
       if (statusText) {
@@ -550,7 +596,7 @@
       }
 
       rows.push({ soopId: soopId, nickname: nickname, description: description,
-                  category: category, status: status });
+                  category: category, status: status, createdAt: createdAt });
     });
     return { rows: rows, errors: errors };
   }
@@ -561,10 +607,17 @@
 
     var summary = document.createElement("p");
     summary.className = parsed.errors.length ? "bulk-summary warn" : "bulk-summary ok";
+    var dated = parsed.rows.filter(function (row) { return row.createdAt; }).length;
+    var dateNote = parsed.rows.length
+      ? (dated === parsed.rows.length ? " · 날짜 그대로 들어갑니다"
+         : dated ? " · " + dated + "건은 날짜 지정, 나머지는 오늘로"
+         : " · 날짜를 안 적어서 전부 오늘로 들어갑니다")
+      : "";
     summary.textContent = saved
       ? parsed.rows.length.toLocaleString("ko-KR") + "건을 등록했어요."
       : parsed.rows.length.toLocaleString("ko-KR") + "건 등록 가능"
-        + (parsed.errors.length ? " · " + parsed.errors.length + "줄은 건너뜁니다" : "");
+        + (parsed.errors.length ? " · " + parsed.errors.length + "줄은 건너뜁니다" : "")
+        + dateNote;
     elements.bulkResult.appendChild(summary);
 
     if (parsed.errors.length) {
