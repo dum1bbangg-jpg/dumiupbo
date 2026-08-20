@@ -16,6 +16,11 @@
   };
 
   var elements = {};
+  var weflabStarted = false;
+
+  /* The WefLab connector saves records straight to the database, so give it a
+     way to refresh this page's list afterwards. */
+  window.DoomiAdmin = { reload: function () { loadRecords(true); } };
 
   document.addEventListener("DOMContentLoaded", init);
 
@@ -136,6 +141,10 @@
     /* Ad blockers sometimes hide admin-prefixed containers; re-assert once. */
     window.setTimeout(function () { elements.shell.hidden = false; }, 1200);
     loadRecords(false);
+    if (window.DoomiWeflab && !weflabStarted) {
+      weflabStarted = true;
+      window.DoomiWeflab.init();
+    }
   }
 
   async function handleLogin(event) {

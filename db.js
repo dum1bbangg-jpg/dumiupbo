@@ -60,7 +60,9 @@
       return new Error("debts 테이블이 없어요. supabase.sql을 먼저 실행해 주세요.");
     }
     if (code === "23505") {
-      return new Error("이미 등록된 기록이에요.");
+      var duplicate = new Error("이미 등록된 기록이에요.");
+      duplicate.duplicate = true;
+      return duplicate;
     }
     return new Error(error.message || fallback);
   }
@@ -107,9 +109,12 @@
       description: requiredText(input.description, "업보 내용", 1000),
       status: input.status === "done" ? "done" : "active",
       category: safeCategory(input.category),
-      source: "manual"
+      source: input.source === "weplab" ? "weplab" : "manual"
     };
     if (input.createdAt) payload.created_at = input.createdAt;
+    /* Lets the roulette connector rely on the unique index instead of the
+       browser tab's memory, so a refresh cannot re-insert the same spin. */
+    if (input.sourceEventId) payload.source_event_id = String(input.sourceEventId).slice(0, 180);
     var result = await client.from("debts").insert(payload).select().single();
     if (result.error) throw friendlyError(result.error, "업보를 저장하지 못했어요.");
     return fromRow(result.data);
@@ -174,6 +179,23 @@
     if (result.error) throw friendlyError(result.error, "기록을 삭제하지 못했어요.");
     if (!result.data || !result.data.length) throw new Error("삭제할 기록을 찾지 못했어요.");
     return true;
+  }
+
+  /* site_settings has no anon policy, so these only work while logged in. */
+  async function getSetting(key) {
+    if (!configured) throw notConfigured();
+    var result = await client.from("site_settings").select("value").eq("key", key).maybeSingle();
+    if (result.error) throw friendlyError(result.error, "설정을 불러오지 못했어요.");
+    return result.data ? result.data.value : null;
+  }
+
+  async function saveSetting(key, value) {
+    if (!configured) throw notConfigured();
+    var result = await client.from("site_settings")
+      .upsert({ key: key, value: value, updated_at: new Date().toISOString() }, { onConflict: "key" })
+      .select().single();
+    if (result.error) throw friendlyError(result.error, "설정을 저장하지 못했어요.");
+    return result.data.value;
   }
 
   async function getSession() {
@@ -320,6 +342,8 @@
     updateRecord: updateRecord,
     updateRecordStatus: updateRecordStatus,
     deleteRecord: deleteRecord,
+    getSetting: getSetting,
+    saveSetting: saveSetting,
     getSession: getSession,
     signIn: signIn,
     signOut: signOut,

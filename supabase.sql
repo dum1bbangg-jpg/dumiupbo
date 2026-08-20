@@ -88,3 +88,34 @@ drop trigger if exists debts_completed_at on public.debts;
 create trigger debts_completed_at
   before insert or update on public.debts
   for each row execute function public.debts_sync_completed_at();
+
+-- Admin-only settings (WefLab alert URL and its field mapping).
+-- No anon policy on purpose: the alert URL is a secret and the public page
+-- must never be able to read it.
+create table if not exists public.site_settings (
+  key        text primary key,
+  value      jsonb       not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.site_settings enable row level security;
+
+drop policy if exists site_settings_admin_read on public.site_settings;
+drop policy if exists site_settings_admin_write on public.site_settings;
+drop policy if exists site_settings_admin_update on public.site_settings;
+
+create policy site_settings_admin_read
+  on public.site_settings for select
+  to authenticated
+  using (true);
+
+create policy site_settings_admin_write
+  on public.site_settings for insert
+  to authenticated
+  with check (true);
+
+create policy site_settings_admin_update
+  on public.site_settings for update
+  to authenticated
+  using (true)
+  with check (true);
