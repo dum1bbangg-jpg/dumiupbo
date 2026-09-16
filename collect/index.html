@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>두미 업보 수집기</title>
+<style>
+  html,body{margin:0;padding:0;background:transparent;color:#F2EDF7;
+    font-family:'Pretendard','Noto Sans KR',system-ui,sans-serif;font-size:13px}
+  body.hud-off .hud{display:none}
+  .hud{position:fixed;left:12px;top:12px;min-width:250px;max-width:420px;
+    background:rgba(20,16,26,.92);border:1px solid #3A2C43;border-radius:12px;padding:12px 14px}
+  h1{margin:0 0 8px;font-size:12px;letter-spacing:.18em;color:#FF7FAE;font-weight:800}
+  .state{display:flex;align-items:center;gap:8px;font-size:13px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#8E839C;flex:0 0 auto}
+  .dot.on{background:#7BD88F}.dot.wait{background:#F0C674}.dot.err{background:#E88A9A}
+  .count{margin-top:8px;font-size:12px;color:#C9BFD6}
+  .count b{color:#FF7FAE}
+  .log{margin-top:9px;max-height:190px;overflow:auto;font-size:11.5px;color:#9C8592;
+    white-space:pre-wrap;word-break:break-all;line-height:1.55}
+  .bad{color:#E88A9A}
+</style>
+</head>
+<body>
+<div class="hud">
+  <h1>DOOMI KARMA COLLECTOR</h1>
+  <div class="state"><span class="dot" id="dot"></span><span id="state">준비 중</span></div>
+  <div class="count">이번 접속에서 저장 <b id="saved">0</b>건 · 대기 <b id="queued">0</b>건</div>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* Holds the WefLab alert socket and posts every roulette result to the site.
+     Open it as an OBS browser source; it only needs to run while streaming,
+     because that is the only time a roulette can be spun.
+
+     Address: /collect/?idx=<weflab idx>&key=<bridge token>
+     Both values stay in the URL, never in this file.
+
+     Frame rules (engine.io v4 / socket.io v4, websocket only)
+       server -> 0{...}          handshake
+       client -> 40              join namespace
+       server -> 40{"sid":...}   joined
+       client -> 42["msg",{...}] emit
+       server -> 42["msg",{...}] event
+       server -> 2               ping; the client MUST answer 3 or it is dropped
+
+     Live donations and roulette results arrive as two separate messages joined
+     only by uid, so a donation is held until its result shows up. */
+
+  var SOCKET = "wss://ssmain.weflab.com/socket.io/";
+  var IMPORT_PATH = "/api/weplab/import";
+  var PENDING_TTL_MS = 10 * 60 * 1000;
+  var QUEUE_KEY = "doomi-collect-queue";
+  var FLUSH_MS = 4000;
+  var MAX_BATCH = 200;
+
+  var q = new URLSearchParams(location.search);
+  var IDX = (q.get("idx") || "").trim();
+  var KEY = (q.get("key") || "").trim();
+  var MODE = (q.get("mode") || "alertlist").trim();
+  var PRESET = (q.get("preset") || "0").trim();
+  if (q.get("hud") === "0") document.body.classList.add("hud-off");
+
+  var el = {
+    dot: document.getElementById("dot"),
+    state: document.getElementById("state"),
+    saved: document.getElementById("saved"),
+    queued: document.getElementById("queued"),
+    log: document.getElementById("log")
+  };
+
+  var savedCount = 0;
+  var queue = loadQueue();
+  var seen = new Set();
+  var pending = new Map();
+  var ws = null, joined = false, retry = 0, retryTimer = null, flushing = false;
+
+  function say(msg, bad) {
+    var t = new Date().toTimeString().slice(0, 8);
+    var line = document.createElement("div");
+    if (bad) line.className = "bad";
+    line.textContent = t + "  " + msg;
+    el.log.insertBefore(line, el.log.firstChild);
+    while (el.log.childNodes.length > 60) el.log.removeChild(el.log.lastChild);
+  }
+  function setState(kind, text) {
+    el.dot.className = "dot" + (kind ? " " + kind : "");
+    el.state.textContent = text;
+    document.title = "두미 수집기 · " + text;
+  }
+  function counts() {
+    el.saved.textContent = String(savedCount);
+    el.queued.textContent = String(queue.length);
+  }
+
+  /* ---------- queue ---------- */
+  /* Kept in localStorage so restarting OBS does not lose rows that were
+     collected while the site was unreachable. The server ignores duplicates,
+     so re-sending the same row is always safe. */
+  function loadQueue() {
+    try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]"); }
+    catch (e) { return []; }
+  }
+  function saveQueue() {
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queue.slice(0, 2000))); }
+    catch (e) { /* private mode */ }
+  }
+
+  async function flush() {
+    if (flushing || !queue.length || !KEY) return;
+    flushing = true;
+    var batch = queue.slice(0, MAX_BATCH);
+    try {
+      var res = await fetch(IMPORT_PATH, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + KEY },
+        body: JSON.stringify({ items: batch })
+      });
+      var body = null;
+      try { body = await res.json(); } catch (e) { /* non-json error page */ }
+
+      if (res.ok) {
+        queue = queue.slice(batch.length);
+        saveQueue();
+        savedCount += (body && body.imported) || 0;
+        counts();
+        if (body && body.imported) say("저장 " + body.imported + "건" + (body.skipped ? " (중복 " + body.skipped + "건 건너뜀)" : ""));
+      } else if (res.status === 401) {
+        say("보내기 거절 401 — 주소의 key 값이 서버 토큰과 다릅니다", true);
+      } else if (res.status === 503) {
+        say("보내기 거절 503 — Cloudflare 환경 변수가 비어 있습니다", true);
+      } else if (res.status >= 400 && res.status < 500) {
+        /* The same rows will fail again; drop them instead of blocking the queue. */
+        say("서버가 " + res.status + " 로 거절해서 " + batch.length + "건을 버립니다: "
+          + ((body && body.error) || ""), true);
+        queue = queue.slice(batch.length);
+        saveQueue();
+        counts();
+      } else {
+        say("보내기 실패 " + res.status + " — 다음에 다시 시도합니다", true);
+      }
+    } catch (err) {
+      say("보내기 실패 — 인터넷이 끊겼나요? 다음에 다시 시도합니다", true);
+    } finally {
+      flushing = false;
+    }
+  }
+  setInterval(flush, FLUSH_MS);
+
+  /* ---------- weflab payload -> karma rows ---------- */
+
+  function toIso(v) {
+    if (v == null || v === "") return new Date().toISOString();
+    if (typeof v === "number" || /^\d{9,13}$/.test(String(v))) {
+      var n = Number(v);
+      return new Date(n < 1e12 ? n * 1000 : n).toISOString();
+    }
+    var s = String(v).trim();
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    /* WefLab server time is KST. */
+    if (m) return new Date(m[1] + "-" + m[2] + "-" + m[3] + "T" + m[4] + ":" + m[5] + ":" + (m[6] || "00") + "+09:00").toISOString();
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  }
+
+  /* list = [[item, percent], ...]; index 0 is the headline hit, 1+ are the
+     follow-up spins, and each one is its own 업보. */
+  function toKarmaRows(data) {
+    if (!data) return [];
+    var winner = String(data.roulette || "").trim();
+    if (!winner) return [];
+
+    var stages = [[winner, data.percent == null ? "" : String(data.percent)]];
+    if (data.list) {
+      try {
+        var parsed = typeof data.list === "string" ? JSON.parse(data.list) : data.list;
+        if (Array.isArray(parsed) && parsed.length) stages = parsed;
+      } catch (e) { /* keep the single stage */ }
+    }
+
+    var uid = String(data.uid || ((data.id || "unknown") + "-" + (data.create_time || data.time || Date.now())));
+    var occurred = toIso(data.create_time || data.time);
+
+    return stages.map(function (s, i) {
+      return {
+        event_uid: uid,
+        stage: i,
+        item: String(Array.isArray(s) ? s[0] : s || "").trim(),
+        viewer_name: data.name || "",
+        viewer_id: data.id || data.bjid || "",
+        occurred_at: occurred,
+        status: "active"
+      };
+    }).filter(function (r) { return r.item; });
+  }
+
+  /* ---------- socket ---------- */
+
+  function open() {
+    clearTimeout(retryTimer);
+    joined = false;
+
+    var type = MODE === "alert" ? "page" : "setup";
+    var qs = new URLSearchParams({
+      EIO: "4", transport: "websocket", idx: IDX, type: type, page: MODE
+    });
+    setState("wait", "연결 중");
+
+    try { ws = new WebSocket(SOCKET + "?" + qs); }
+    catch (err) { scheduleRetry("소켓을 못 열었습니다"); return; }
+
+    ws.onmessage = function (ev) { onFrame(String(ev.data)); };
+    ws.onerror = function () { setState("err", "연결 오류"); };
+    ws.onclose = function () {
+      joined = false;
+      scheduleRetry("끊김");
+    };
+  }
+
+  function send(frame) { if (ws && ws.readyState === 1) ws.send(frame); }
+
+  function onFrame(raw) {
+    if (!raw) return;
+    if (raw === "2") { send("3"); return; }
+    if (raw[0] === "0" && raw[1] === "{") { send("40"); return; }
+
+    if (raw.indexOf("40") === 0) {
+      joined = true;
+      retry = 0;
+      send("42" + JSON.stringify(["msg", {
+        type: "join",
+        page: MODE === "alert" ? "page" : "setup",
+        idx: IDX,
+        pageid: MODE,
+        preset: PRESET
+      }]));
+      setState("on", "위플랩 연결됨 — 수집 중");
+      say("위플랩에 붙었습니다");
+      return;
+    }
+
+    if (raw.indexOf("44") === 0) {
+      setState("err", "위플랩이 거절했습니다 (idx 확인)");
+      say("위플랩이 연결을 거절했습니다. 주소의 idx 가 맞는지 확인하세요", true);
+      return;
+    }
+
+    if (raw.indexOf("42") === 0) {
+      var payload;
+      try { payload = JSON.parse(raw.slice(2)); } catch (e) { return; }
+      if (!Array.isArray(payload) || payload[0] !== "msg") return;
+      handle(payload[1]);
+    }
+  }
+
+  function handle(msg) {
+    if (!msg || typeof msg !== "object") return;
+    sweep();
+
+    var bodies = [msg.data, msg].filter(function (d) { return d && typeof d === "object" && d.uid; });
+
+    for (var i = 0; i < bodies.length; i++) {
+      var body = bodies[i];
+      var uid = String(body.uid);
+
+      if (String(body.roulette || "").trim()) {
+        var held = pending.get(uid);
+        var merged = held ? Object.assign({}, held.data, body) : body;
+        pending.delete(uid);
+        commit(uid, merged);
+        return;
+      }
+
+      var looksLikeDonation = body.name || body.value || body.id;
+      if (looksLikeDonation && !seen.has(uid) && !pending.has(uid)) {
+        pending.set(uid, { at: Date.now(), data: body });
+        say("후원 도착 — " + (body.name || body.id || "") + " " + (body.value || "") + " (룰렛 결과 대기)");
+      }
+    }
+  }
+
+  function commit(uid, data) {
+    if (seen.has(uid)) return;
+    var rows = toKarmaRows(data);
+    if (!rows.length) return;
+    seen.add(uid);
+    if (seen.size > 3000) seen = new Set(Array.from(seen).slice(-1500));
+
+    queue = queue.concat(rows);
+    saveQueue();
+    counts();
+    say("룰렛 " + rows.length + "건 — " + rows.map(function (r) { return r.item; }).join(", "));
+    flush();
+  }
+
+  function sweep() {
+    var now = Date.now();
+    pending.forEach(function (held, uid) {
+      if (now - held.at > PENDING_TTL_MS) pending.delete(uid);
+    });
+  }
+
+  function scheduleRetry(reason) {
+    ws = null;
+    retry += 1;
+    var wait = Math.min(30000, 1000 * Math.pow(1.7, retry));
+    setState("err", reason + " — " + Math.round(wait / 1000) + "초 후 재연결");
+    retryTimer = setTimeout(open, wait);
+  }
+
+  /* ---------- start ---------- */
+  counts();
+  if (!IDX || !KEY) {
+    setState("err", "주소가 비어 있습니다");
+    say("주소 형식: /collect/?idx=위플랩idx&key=사이트토큰", true);
+  } else {
+    say("대기 중인 기록 " + queue.length + "건");
+    flush();
+    open();
+  }
+})();
+</script>
+</body>
+</html>
